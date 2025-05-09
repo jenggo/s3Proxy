@@ -1,0 +1,8 @@
+FROM chainguard/static
+
+COPY s3proxy .
+COPY views/ views/
+
+EXPOSE 2804
+
+ENTRYPOINT ["./s3proxy"]

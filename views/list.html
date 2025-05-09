@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>S3 Files</title>
+    <style
+      src="https://raw.githubusercontent.com/twbs/bootstrap/v4-dev/dist/css/bootstrap-reboot.css"
+    ></style>
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      h1 {
+        border-bottom: 1px solid #eaecef;
+        padding-bottom: 10px;
+      }
+      h2 {
+        margin-top: 30px;
+        padding: 8px;
+        background-color: #f6f8fa;
+        border-radius: 5px;
+      }
+      .file-list {
+        list-style-type: none;
+        padding: 0;
+      }
+      .file-item {
+        display: flex;
+        align-items: center;
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+      }
+      .file-item:hover {
+        background-color: #f6f8fa;
+      }
+      .file-name {
+        flex-grow: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .file-item a {
+        color: #0366d6;
+        text-decoration: none;
+      }
+      .file-item a:hover {
+        text-decoration: underline;
+      }
+      .copy-button {
+        background-color: #f1f1f1;
+        border: none;
+        border-radius: 4px;
+        padding: 5px 10px;
+        margin-left: 10px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .copy-button:hover {
+        background-color: #e1e1e1;
+      }
+      .search-container {
+        margin: 20px 0;
+        display: flex;
+        align-items: center;
+      }
+      #search-input {
+        padding: 8px;
+        width: 100%;
+        max-width: 400px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .clear-search {
+        margin-left: 10px;
+        padding: 6px 12px;
+        background-color: #f1f1f1;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        display: none;
+      }
+      .clear-search:hover {
+        background-color: #e1e1e1;
+      }
+      .no-results {
+        padding: 10px;
+        color: #666;
+        font-style: italic;
+      }
+      .file-count {
+        color: #666;
+        font-size: 14px;
+        margin-left: 5px;
+      }
+      @media (max-width: 768px) {
+        .file-item {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .copy-button {
+          margin-left: 0;
+          margin-top: 5px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>S3 Files</h1>
+
+    <div class="search-container">
+      <input
+        type="text"
+        id="search-input"
+        placeholder="Search files..."
+        autofocus
+      />
+      <button id="clear-search" class="clear-search">Clear</button>
+    </div>
+
+    <div id="file-container">
+      {{range .Directories}}
+      <div class="directory-section" data-dir="{{.Name}}">
+        <h2>
+          {{.Name}} <span class="file-count">({{.FileCount}} files)</span>
+        </h2>
+        <ul class="file-list">
+          {{range .Files}}
+          <li class="file-item" data-path="{{.Name}}">
+            <div class="file-name">
+              <a href="{{.Url}}" target="_blank">{{.DisplayName}}</a>
+            </div>
+            <button class="copy-button" data-url="{{.Url}}">Copy URL</button>
+          </li>
+          {{end}}
+        </ul>
+      </div>
+      {{end}}
+    </div>
+
+    <div id="no-results" class="no-results" style="display: none">
+      No matching files found
+    </div>
+
+    <script>
+      // COPY FUNCTIONALITY
+      document.addEventListener("click", function (e) {
+        if (e.target.classList.contains("copy-button")) {
+          const url = e.target.getAttribute("data-url");
+          navigator.clipboard
+            .writeText(url)
+            .then(() => {
+              const originalText = e.target.textContent;
+              e.target.textContent = "Copied!";
+              e.target.style.backgroundColor = "#d4edda";
+
+              setTimeout(() => {
+                e.target.textContent = originalText;
+                e.target.style.backgroundColor = "";
+              }, 1500);
+            })
+            .catch((err) => {
+              console.error("Could not copy text: ", err);
+              e.target.textContent = "Error!";
+              setTimeout(() => {
+                e.target.textContent = "Copy URL";
+              }, 1500);
+            });
+        }
+      });
+
+      // SEARCH FUNCTIONALITY
+      const searchInput = document.getElementById("search-input");
+      const clearSearchBtn = document.getElementById("clear-search");
+      const fileItems = document.querySelectorAll(".file-item");
+      const dirSections = document.querySelectorAll(".directory-section");
+      const noResults = document.getElementById("no-results");
+      const fileContainer = document.getElementById("file-container");
+
+      // Function to perform search
+      function performSearch() {
+        const searchTerm = searchInput.value.toLowerCase().trim();
+        let matchCount = 0;
+
+        // Toggle clear button visibility
+        clearSearchBtn.style.display = searchTerm ? "block" : "none";
+
+        // Reset visibility
+        if (!searchTerm) {
+          fileItems.forEach((item) => (item.style.display = "flex"));
+          dirSections.forEach((section) => (section.style.display = "block"));
+          noResults.style.display = "none";
+          fileContainer.style.display = "block";
+          return;
+        }
+
+        // Track visible files per directory
+        const visibleFilesInDir = {};
+
+        // First pass: mark files as visible/hidden
+        fileItems.forEach((item) => {
+          // Search in full path and display name
+          const filePath = item.getAttribute("data-path").toLowerCase();
+          const displayName = item
+            .querySelector(".file-name")
+            .textContent.toLowerCase();
+          const isVisible =
+            filePath.includes(searchTerm) || displayName.includes(searchTerm);
+
+          item.style.display = isVisible ? "flex" : "none";
+
+          if (isVisible) {
+            matchCount++;
+
+            // Find which directory this file belongs to
+            const parentDir = item.closest(".directory-section");
+            if (parentDir) {
+              const dirName = parentDir.getAttribute("data-dir");
+              visibleFilesInDir[dirName] =
+                (visibleFilesInDir[dirName] || 0) + 1;
+            }
+          }
+        });
+
+        // Second pass: show/hide directory sections
+        dirSections.forEach((section) => {
+          const dirName = section.getAttribute("data-dir");
+          section.style.display = visibleFilesInDir[dirName] ? "block" : "none";
+        });
+
+        // Show/hide no results message
+        noResults.style.display = matchCount === 0 ? "block" : "none";
+        fileContainer.style.display = matchCount === 0 ? "none" : "block";
+      }
+
+      // Input event for live search
+      searchInput.addEventListener("input", performSearch);
+
+      // Clear search button
+      clearSearchBtn.addEventListener("click", function () {
+        searchInput.value = "";
+        performSearch();
+        searchInput.focus();
+      });
+
+      // Call search on page load in case there's a value in the search field
+      // (e.g. from browser back/forward navigation)
+      performSearch();
+    </script>
+  </body>
+</html>
