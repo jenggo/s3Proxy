@@ -10,6 +10,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -18,17 +19,19 @@ type S3 struct {
 	client *minio.Client
 }
 
-// Client is the global S3 client instance that can be used directly
-var Client *S3
-
 // Global initialization tracking
 var (
+	Client  *S3
 	once    sync.Once
 	initErr error
+	logger  zerolog.Logger
 )
 
 // InitMinio initializes the global MinIO client
 func InitMinio() error {
+	// Initialize the package logger
+	logger = log.With().Caller().Logger()
+
 	once.Do(func() {
 		client, err := minio.New(types.Config.S3.Endpoint, &minio.Options{
 			Creds:  credentials.NewStaticV4(types.Config.S3.Key.Access, types.Config.S3.Key.Secret, ""),
@@ -36,7 +39,7 @@ func InitMinio() error {
 		})
 
 		if err != nil {
-			log.Error().Caller().Err(err).Send()
+			logger.Error().Err(err).Send()
 			initErr = err
 			return
 		}
@@ -61,17 +64,17 @@ func NewMinio() (*S3, error) {
 	})
 
 	if err != nil {
-		log.Error().Caller().Err(err).Send()
+		logger.Error().Err(err).Send()
 		return nil, err
 	}
 
 	s3Client := &S3{client: client}
-	
+
 	// Set global client if not already set
 	if Client == nil {
 		Client = s3Client
 	}
-	
+
 	return s3Client, nil
 }
 
@@ -86,7 +89,7 @@ func (s3 *S3) List(ctx context.Context, baseURL string) (list []types.List) {
 		// Skip if it's a folder (S3 represents folders as objects ending with '/')
 		// Some S3 implementations also create 0-byte objects to represent folders
 		if strings.HasSuffix(object.Key, "/") {
-			log.Debug().Msgf("Skipping folder: %s", object.Key)
+			logger.Debug().Msgf("Skipping folder: %s", object.Key)
 			continue
 		}
 
@@ -103,14 +106,14 @@ func (s3 *S3) List(ctx context.Context, baseURL string) (list []types.List) {
 			// If the filename has no extension and is empty or doesn't contain a dot,
 			// it's likely a folder marker
 			if filename == "" || !strings.Contains(filename, ".") {
-				log.Debug().Msgf("Skipping likely folder marker: %s (size: %d)", object.Key, object.Size)
+				logger.Debug().Msgf("Skipping likely folder marker: %s (size: %d)", object.Key, object.Size)
 				continue
 			}
 		}
 
 		// Security check: Reject files with suspicious patterns
 		if strings.Contains(object.Key, "..") {
-			log.Warn().Msgf("Skipping file with suspicious path: %s", object.Key)
+			logger.Warn().Msgf("Skipping file with suspicious path: %s", object.Key)
 			continue
 		}
 
@@ -132,7 +135,7 @@ func (s3 *S3) PresignedUrl(ctx context.Context, objectName string) (string, erro
 
 	url, err := s3.client.PresignedGetObject(ctx, types.Config.S3.Bucket, objectName, time.Hour, reqParams)
 	if err != nil {
-		log.Error().Caller().Err(err).Send()
+		logger.Error().Err(err).Send()
 		return "", err
 	}
 
@@ -143,7 +146,7 @@ func (s3 *S3) FindObject(ctx context.Context, objectPath string) string {
 	// Try decoding the path if it might be URL-encoded
 	decodedPath, decodeErr := url.QueryUnescape(objectPath)
 	if decodeErr == nil && decodedPath != objectPath {
-		log.Debug().Msgf("Successfully decoded path: %s -> %s", objectPath, decodedPath)
+		logger.Debug().Msgf("Successfully decoded path: %s -> %s", objectPath, decodedPath)
 	}
 
 	if objectPath == "" {
@@ -159,13 +162,13 @@ func (s3 *S3) FindObject(ctx context.Context, objectPath string) string {
 
 		// Try matching with the original path
 		if object.Key == objectPath {
-			log.Debug().Msgf("Found exact match: %s", object.Key)
+			logger.Debug().Msgf("Found exact match: %s", object.Key)
 			return object.Key
 		}
 
 		// If we have a decoded path, try that too
 		if decodeErr == nil && object.Key == decodedPath {
-			log.Debug().Msgf("Found exact match with decoded path: %s", object.Key)
+			logger.Debug().Msgf("Found exact match with decoded path: %s", object.Key)
 			return object.Key
 		}
 	}
@@ -179,13 +182,13 @@ func (s3 *S3) FindObject(ctx context.Context, objectPath string) string {
 
 		// Try with original path
 		if strings.EqualFold(object.Key, objectPath) {
-			log.Info().Msgf("Found case-insensitive match: %s for request: %s", object.Key, objectPath)
+			logger.Info().Msgf("Found case-insensitive match: %s for request: %s", object.Key, objectPath)
 			return object.Key
 		}
 
 		// If we have a decoded path, try that too
 		if decodeErr == nil && strings.EqualFold(object.Key, decodedPath) {
-			log.Info().Msgf("Found case-insensitive match with decoded path: %s for request: %s",
+			logger.Info().Msgf("Found case-insensitive match with decoded path: %s for request: %s",
 				object.Key, decodedPath)
 			return object.Key
 		}
@@ -205,7 +208,7 @@ func (s3 *S3) FindObject(ctx context.Context, objectPath string) string {
 	// Split requested path into components
 	requestParts := strings.Split(analysisPath, "/")
 	if len(requestParts) < 2 {
-		log.Debug().Msgf("Object not found and path too simple for component matching: %s", analysisPath)
+		logger.Debug().Msgf("Object not found and path too simple for component matching: %s", analysisPath)
 		return ""
 	}
 
@@ -274,10 +277,10 @@ func (s3 *S3) FindObject(ctx context.Context, objectPath string) string {
 
 	// If we found a reasonably good match, use it
 	if bestMatchScore > 30 { // Threshold for accepting a match
-		log.Info().Msgf("Found fuzzy match: %s (score: %d) for request: %s", bestMatch, bestMatchScore, objectPath)
+		logger.Info().Msgf("Found fuzzy match: %s (score: %d) for request: %s", bestMatch, bestMatchScore, objectPath)
 		return bestMatch
 	}
 
-	log.Debug().Msgf("Object not found in bucket: %s", objectPath)
+	logger.Debug().Msgf("Object not found in bucket: %s", objectPath)
 	return ""
 }
