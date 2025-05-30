@@ -2,8 +2,10 @@ package types
 
 const (
 	AppName    = "s3Proxy"
-	AppVersion = "0.0.1"
+	AppVersion = "0.0.2"
 )
+
+var IsEmptyBucket bool
 
 var Config struct {
 	App struct {
@@ -17,7 +19,7 @@ var Config struct {
 
 	S3 struct {
 		Endpoint string `yaml:"endpoint" env:"S3_ENDPOINT" env-required:"true"`
-		Bucket   string `yaml:"bucket" env:"S3_BUCKET" env-required:"true"`
+		Bucket   string `yaml:"bucket" env:"S3_BUCKET" env-upd:"true"`
 		Key      struct {
 			Access string `yaml:"access" env:"S3_ACCESS_KEY" env-required:"true"`
 			Secret string `yaml:"secret" env:"S3_SECRET_KEY" env-required:"true"`

@@ -50,34 +50,6 @@ func InitMinio() error {
 	return initErr
 }
 
-// NewMinio creates a new MinIO client (kept for backward compatibility)
-func NewMinio() (*S3, error) {
-	// If global client exists, return it
-	if Client != nil {
-		return Client, nil
-	}
-
-	// Otherwise create a new instance (fallback)
-	client, err := minio.New(types.Config.S3.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(types.Config.S3.Key.Access, types.Config.S3.Key.Secret, ""),
-		Secure: true,
-	})
-
-	if err != nil {
-		logger.Error().Err(err).Send()
-		return nil, err
-	}
-
-	s3Client := &S3{client: client}
-
-	// Set global client if not already set
-	if Client == nil {
-		Client = s3Client
-	}
-
-	return s3Client, nil
-}
-
 func (s3 *S3) List(ctx context.Context, baseURL string) (list []types.List) {
 	objectList := s3.client.ListObjects(ctx, types.Config.S3.Bucket, minio.ListObjectsOptions{Recursive: true})
 

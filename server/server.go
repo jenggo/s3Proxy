@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/earlydata"
 	"github.com/gofiber/fiber/v3/middleware/favicon"
 	"github.com/gofiber/fiber/v3/middleware/helmet"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/gofiber/fiber/v3/middleware/pprof"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/template/html/v2"
@@ -44,6 +45,9 @@ func Start() (app *fiber.App, err error) {
 	app.Use(helmet.New())
 	app.Use(earlydata.New())
 	app.Use(recover.New(recover.Config{EnableStackTrace: true}))
+	app.Use(limiter.New(limiter.Config{
+		SkipSuccessfulRequests: true,
+	}))
 
 	if types.Config.App.EnableList {
 		app.Get("/list", list)

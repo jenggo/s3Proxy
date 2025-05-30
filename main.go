@@ -27,6 +27,10 @@ func main() {
 		TimeFormat: "Mon 2006-01-02 15:04:05",
 	}).With().Timestamp().Logger()
 
+	if types.Config.S3.Bucket == "" {
+		types.IsEmptyBucket = true
+	}
+
 	// Initialize MinIO client
 	if err := pkg.InitMinio(); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize MinIO client")

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/rs/zerolog/log"
 )
 
@@ -39,6 +40,23 @@ func proxy(ctx fiber.Ctx) error {
 	}
 
 	log.Debug().Msgf("request for %s (decoded from %s)", objectPath, encodedPath)
+
+	// When bucket is not defined in config, then assume bucket is in url
+	if types.IsEmptyBucket {
+		parts := strings.SplitN(objectPath, "/", 2)
+
+		types.Config.S3.Bucket = parts[0]
+		if err := cleanenv.UpdateEnv(&types.Config); err != nil {
+			log.Warn().Err(err).Msg("failed to update environment variables")
+		}
+
+		objectPath = ""
+		if len(parts) == 2 {
+			objectPath = parts[1]
+		}
+
+		log.Debug().Str("bucket", types.Config.S3.Bucket).Str("object", objectPath).Msg("bucket set from url")
+	}
 
 	// Use global S3 client
 	// Verify object exists first
