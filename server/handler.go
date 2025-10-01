@@ -21,7 +21,7 @@ func errHandler(c fiber.Ctx, err error) error {
 	method := c.Method()
 	path := c.Path()
 
-	if ua != "" && ip != "" && code != fiber.StatusNotFound && code != fiber.StatusMethodNotAllowed && err != keyauth.ErrMissingOrMalformedAPIKey {
+	if ua != "" && ip != "" && code != fiber.StatusNotFound && code != fiber.StatusMethodNotAllowed && !errors.Is(err, keyauth.ErrMissingOrMalformedAPIKey) {
 		log.Error().Str("UserAgent", ua).Str("IP", ip).Str("Method", method).Str("Path", path).Err(err).Send()
 	}
 

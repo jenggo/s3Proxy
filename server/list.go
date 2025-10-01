@@ -55,14 +55,14 @@ func renderHTMLList(ctx fiber.Ctx, files []types.List) error {
 	}
 
 	// Sort the directories for consistent display
-	var dirs []string
+	dirs := make([]string, 0, len(organizedFiles))
 	for dir := range organizedFiles {
 		dirs = append(dirs, dir)
 	}
 	sort.Strings(dirs)
 
 	// Create Directory objects for template
-	var directories []types.Directory
+	directories := make([]types.Directory, 0, len(dirs))
 	for _, dir := range dirs {
 		files := organizedFiles[dir]
 

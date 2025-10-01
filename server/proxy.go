@@ -1,9 +1,11 @@
 package server
 
 import (
+	"io"
 	"net/url"
 	"s3proxy/pkg"
 	"s3proxy/types"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -66,38 +68,64 @@ func proxy(ctx fiber.Ctx) error {
 		return ctx.SendStatus(404)
 	}
 
-	// Generate presigned URL for the verified object
-	presignedURL, err := pkg.Client.PresignedUrl(ctx.Context(), objectKey)
+	// Get object info first to set headers
+	log.Debug().Msgf("getting object info for: %s", objectKey)
+	objectInfo, err := pkg.Client.StatObject(ctx.Context(), objectKey)
 	if err != nil {
-		log.Error().Err(err).Send()
+		log.Error().Err(err).Msgf("failed to get object info for: %s", objectKey)
 		return ctx.SendStatus(404)
 	}
 
-	// Verify the generated URL isn't redirecting to an unexpected domain
-	parsedURL, err := url.Parse(presignedURL)
+	// Get object from S3 and stream it
+	log.Debug().Msgf("getting object stream for: %s (size: %d)", objectKey, objectInfo.Size)
+	object, err := pkg.Client.GetObject(ctx.Context(), objectKey)
 	if err != nil {
-		log.Error().Err(err).Msgf("Failed to parse presigned URL: %s", presignedURL)
-		return ctx.SendStatus(500)
+		log.Error().Err(err).Msgf("failed to get object from S3: %s", objectKey)
+		return ctx.SendStatus(404)
 	}
+	defer object.Close()
 
-	// Ensure the URL is pointing to the configured S3 endpoint or its proxy
-	s3Hostname := strings.Split(types.Config.S3.Endpoint, ":")[0] // Remove port if present
-	allowedHosts := []string{s3Hostname}
+	// Set status and headers
+	log.Debug().Msgf("streaming object: %s (type: %s, size: %d)", objectKey, objectInfo.ContentType, objectInfo.Size)
+	ctx.Status(200)
 
-	// Check if URL host matches any allowed host
-	validHost := false
-	for _, host := range allowedHosts {
-		if parsedURL.Hostname() == host || strings.HasSuffix(parsedURL.Hostname(), "."+host) {
-			validHost = true
-			break
+	// Set content type - if empty, detect from file extension
+	contentType := objectInfo.ContentType
+	if contentType == "" || contentType == "application/octet-stream" {
+		// Try to detect content type from object key
+		lowerKey := strings.ToLower(objectKey)
+		switch {
+		case strings.HasSuffix(lowerKey, ".jpg"), strings.HasSuffix(lowerKey, ".jpeg"):
+			contentType = "image/jpeg"
+		case strings.HasSuffix(lowerKey, ".png"):
+			contentType = "image/png"
+		case strings.HasSuffix(lowerKey, ".gif"):
+			contentType = "image/gif"
+		case strings.HasSuffix(lowerKey, ".webp"):
+			contentType = "image/webp"
+		case strings.HasSuffix(lowerKey, ".svg"):
+			contentType = "image/svg+xml"
+		case strings.HasSuffix(lowerKey, ".pdf"):
+			contentType = "application/pdf"
 		}
 	}
 
-	if !validHost {
-		log.Error().Msgf("URL host not allowed: %s", parsedURL.Hostname())
-		return ctx.SendStatus(403)
+	// Extract filename from object key for Content-Disposition
+	filename := objectKey
+	if lastSlash := strings.LastIndex(objectKey, "/"); lastSlash >= 0 {
+		filename = objectKey[lastSlash+1:]
 	}
 
-	// Use 302 (Found) status code for temporary redirects
-	return ctx.Redirect().Status(302).To(presignedURL)
+	ctx.Set(fiber.HeaderContentType, contentType)
+	ctx.Set(fiber.HeaderContentDisposition, `inline; filename="`+filename+`"`)
+	ctx.Set(fiber.HeaderContentLength, strconv.FormatInt(objectInfo.Size, 10))
+
+	// Copy the object stream to the response
+	_, err = io.Copy(ctx.Response().BodyWriter(), object)
+	if err != nil {
+		log.Error().Err(err).Msgf("failed to stream object: %s", objectKey)
+		return err
+	}
+
+	return nil
 }

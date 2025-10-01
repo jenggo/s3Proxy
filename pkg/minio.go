@@ -101,6 +101,26 @@ func (s3 *S3) List(ctx context.Context, baseURL string) (list []types.List) {
 	return list
 }
 
+func (s3 *S3) StatObject(ctx context.Context, objectName string) (minio.ObjectInfo, error) {
+	objectInfo, err := s3.client.StatObject(ctx, types.Config.S3.Bucket, objectName, minio.StatObjectOptions{})
+	if err != nil {
+		logger.Error().Err(err).Send()
+		return minio.ObjectInfo{}, err
+	}
+
+	return objectInfo, nil
+}
+
+func (s3 *S3) GetObject(ctx context.Context, objectName string) (*minio.Object, error) {
+	object, err := s3.client.GetObject(ctx, types.Config.S3.Bucket, objectName, minio.GetObjectOptions{})
+	if err != nil {
+		logger.Error().Err(err).Send()
+		return nil, err
+	}
+
+	return object, nil
+}
+
 func (s3 *S3) PresignedUrl(ctx context.Context, objectName string) (string, error) {
 	reqParams := make(url.Values)
 	reqParams.Set("response-content-disposition", "inline")
